@@ -1,6 +1,8 @@
-fastapi
-uvicorn[standard]
-openai
-python-dotenv
-pydantic
-httpx
+streamlit
+google-genai
+pandas
+openpyxl
+pypdf
+streamlit-mic-recorder
+gtts
+plotly
