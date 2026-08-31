@@ -22,7 +22,7 @@ st.set_page_config(
 
 DEFAULT_MODEL = os.getenv(
     "GEMINI_MODEL",
-    "gemini-gemini-3.6-flash"
+    "gemini-2.0-flash"-flash"
 )
 
 API_KEY = os.getenv("GEMINI_API_KEY", "")
