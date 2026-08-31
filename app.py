@@ -1,8 +1,8 @@
 import os
 import streamlit as st
 from google import genai
+from google.genai import types
 
-# Streamlit Page Setup
 st.set_page_config(page_title="Finance & Maintenance AI", page_icon="⚙️", layout="centered")
 st.title("⚙️ Personal Finance & Maintenance AI")
 
@@ -61,17 +61,18 @@ if prompt := st.chat_input("Ask about financial advice, budgets, or maintenance.
         try:
             client = genai.Client(api_key=api_key)
             
-            # Request response with custom persona
-            response = client.interactions.create(
-                model="gemini-3.6-flash",
-                system_instruction=SYSTEM_PROMPTS[mode],
-                input=prompt,
-                stream=True
+            # Fast real-time streaming endpoint
+            response = client.models.generate_content_stream(
+                model="gemini-2.5-flash",
+                contents=prompt,
+                config=types.GenerateContentConfig(
+                    system_instruction=SYSTEM_PROMPTS[mode]
+                )
             )
             
             for chunk in response:
-                if hasattr(chunk, 'delta') and hasattr(chunk.delta, 'text') and chunk.delta.text:
-                    full_response += chunk.delta.text
+                if chunk.text:
+                    full_response += chunk.text
                     message_placeholder.markdown(full_response + "▌")
             
             message_placeholder.markdown(full_response)
