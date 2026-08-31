@@ -63,7 +63,7 @@ if prompt := st.chat_input("Ask about financial advice, budgets, or maintenance.
             
             # Request response with custom persona
             response = client.interactions.create(
-                model="gemini-2.0-flash",
+                model="gemini-3.6-flash",
                 system_instruction=SYSTEM_PROMPTS[mode],
                 input=prompt,
                 stream=True
