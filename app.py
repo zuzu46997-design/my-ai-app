@@ -2,106 +2,418 @@ import os
 import streamlit as st
 from google import genai
 from google.genai import types
+from streamlit_mic_recorder import mic_recorder
 
-st.set_page_config(page_title="Finance & Maintenance AI", page_icon="⚙️", layout="centered")
-st.title("⚙️ Personal Finance & Maintenance AI")
 
-# Retrieve API Key securely
-api_key = os.environ.get("GEMINI_API_KEY", "")
+# ============================================================
+# PAGE CONFIG
+# ============================================================
 
-with st.sidebar:
-    st.header("⚙️ App Controls")
-    if not api_key:
-        api_key = st.text_input("Gemini API Key:", type="password")
-    
-    st.divider()
-    # Topic quick selector
-    mode = st.radio(
-        "Focus Area:",
-        ["💰 Financial Budgeting", "🔧 Home & Car Maintenance", "📊 Expense Analyzer", "🤖 General AI Assistant"]
-    )
-    
-    if st.button("Clear Chat History"):
-        st.session_state.messages = []
-        st.rerun()
+st.set_page_config(
+    page_title="Personal Finance & Maintenance AI",
+    page_icon="⚙️",
+    layout="wide"
+)
 
-# Define System Persona based on selected mode
+
+# ============================================================
+# CONFIGURATION
+# ============================================================
+
+DEFAULT_MODEL = os.getenv(
+    "GEMINI_MODEL",
+    "gemini-gemini-3.6-flash"
+)
+
+API_KEY = os.getenv("GEMINI_API_KEY", "")
+
+
+# ============================================================
+# SYSTEM PROMPTS
+# ============================================================
+
 SYSTEM_PROMPTS = {
-    "💰 Financial Budgeting": "You are a professional financial advisor. Help users track expenses, create budgets, save money, and make smart investment or savings decisions.",
-    "🔧 Home & Car Maintenance": "You are a master handyman and auto mechanic. Help users troubleshoot maintenance issues, plan preventive maintenance schedules, and calculate repair costs.",
-    "📊 Expense Analyzer": "You are a financial analyst. Break down costs, analyze receipts or text expenses provided by the user, and give money-saving recommendations.",
-    "🤖 General AI Assistant": "You are a friendly personal assistant specializing in managing daily tasks, expenses, and asset maintenance."
+
+    "💰 Financial Budgeting": """
+You are a helpful personal finance assistant.
+
+Help users:
+- Create budgets
+- Track expenses
+- Identify unnecessary spending
+- Build savings plans
+- Understand financial concepts
+- Compare financial options
+
+Important:
+- Do not claim to be a licensed financial advisor.
+- Do not guarantee investment returns.
+- Clearly mention uncertainty and risk when discussing investments.
+- Focus on educational and practical budgeting guidance.
+""",
+
+    "🔧 Home & Car Maintenance": """
+You are an experienced home and car maintenance assistant.
+
+Help users:
+- Troubleshoot common maintenance problems
+- Create maintenance schedules
+- Estimate possible repair costs
+- Explain DIY maintenance steps
+- Identify when professional help is needed
+
+Important:
+- Prioritize safety.
+- Warn users when electrical, gas, structural, or dangerous mechanical work
+  should be handled by a qualified professional.
+""",
+
+    "📊 Expense Analyzer": """
+You are an expense analysis assistant.
+
+Help users:
+- Categorize expenses
+- Analyze spending patterns
+- Find unnecessary costs
+- Identify potential savings
+- Create monthly budget recommendations
+
+Present results clearly using:
+- Categories
+- Tables when useful
+- Totals
+- Savings recommendations
+""",
+
+    "🤖 General AI Assistant": """
+You are a helpful, fast, friendly personal AI assistant.
+
+You help with:
+- Daily tasks
+- Personal organization
+- Expenses
+- Budgeting
+- Home maintenance
+- Car maintenance
+- Planning
+- General questions
+
+Be concise, practical, and clear.
+"""
 }
 
-# Initialize chat history
+
+# ============================================================
+# SESSION STATE
+# ============================================================
+
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
-# Render previous chat history
-for msg in st.session_state.messages:
-    with st.chat_message(msg["role"]):
-        st.markdown(msg["content"])
+if "api_key" not in st.session_state:
+    st.session_state.api_key = API_KEY
 
-# User prompt handling
-if prompt := st.chat_input("Ask about financial advice, budgets, or maintenance..."):
-    if not api_key:
-        st.error("Please add your Gemini API Key in the sidebar.")
-        st.stop()
+if "mode" not in st.session_state:
+    st.session_state.mode = "🤖 General AI Assistant"
 
-    # Append user prompt
-    st.session_state.messages.append({"role": "user", "content": prompt})
-    with st.chat_message("user"):
-        st.markdown(prompt)
+if "audio_processed" not in st.session_state:
+    st.session_state.audio_processed = None
 
-    # Stream response from Gemini
-    with st.chat_message("assistant"):
-        message_placeholder = st.empty()
-        full_response = ""
-        
-        try:
-            client = genai.Client(api_key=api_key)
-            
-            # Fast real-time streaming endpoint
-            response = client.models.generate_content_stream(
-                model="gemini-3.6-flash",
-                contents=prompt,
-                config=types.GenerateContentConfig(
-                    system_instruction=SYSTEM_PROMPTS[mode]
-                )
-            )
-            
-            for chunk in response:
-                if chunk.text:
-                    full_response += chunk.text
-                    message_placeholder.markdown(full_response + "▌")
-            
-            message_placeholder.markdown(full_response)
-            st.session_state.messages.append({"role": "assistant", "content": full_response})
-            
-        except Exception as e:
-            st.error(f"Error generating response: {e}")
 
-# Create columns so the text chat input and the mic button sit side-by-side
-col1, col2 = st.columns([8, 1])
+# ============================================================
+# CACHED GEMINI CLIENT
+# ============================================================
 
-with col1:
-    # Your standard chat input box
-    user_prompt = st.chat_input("Ask Gemini...")
+@st.cache_resource
+def get_gemini_client(api_key):
 
-with col2:
-    # A compact microphone button next to the input box
-    from streamlit_mic_recorder import mic_recorder
-    audio = mic_recorder(
-        start_prompt="🎙️",
-        stop_prompt="⏹️",
-        just_once=True,
-        key='inline_mic'
+    return genai.Client(
+        api_key=api_key
     )
 
-# Handle what happens when audio is recorded
-if audio:
-    st.success("Voice received! Processing audio...")
-    # You can now process audio['bytes'] with your Gemini model
-    st.audio(audio['bytes'])
-    st.success("Voice recorded! Processing your audio...")
-    # Optional: You can send the audio['bytes'] to Gemini if you want it to listen directly!
+
+# ============================================================
+# BUILD CHAT HISTORY
+# ============================================================
+
+def build_conversation():
+
+    conversation = []
+
+    for message in st.session_state.messages:
+
+        role = message["role"]
+
+        # Gemini expects user/model style roles
+        if role == "assistant":
+            role = "model"
+
+        conversation.append(
+            types.Content(
+                role=role,
+                parts=[
+                    types.Part(
+                        text=message["content"]
+                    )
+                ]
+            )
+        )
+
+    return conversation
+
+
+# ============================================================
+# SIDEBAR
+# ============================================================
+
+with st.sidebar:
+
+    st.header("⚙️ AI Controls")
+
+    if not st.session_state.api_key:
+
+        entered_key = st.text_input(
+            "Gemini API Key",
+            type="password",
+            placeholder="Enter your Gemini API key"
+        )
+
+        if entered_key:
+            st.session_state.api_key = entered_key
+
+    else:
+
+        st.success("API Key Connected")
+
+    st.divider()
+
+    st.subheader("🎯 Focus Area")
+
+    st.session_state.mode = st.radio(
+        "Choose AI Mode",
+        list(SYSTEM_PROMPTS.keys()),
+        index=list(SYSTEM_PROMPTS.keys()).index(
+            st.session_state.mode
+        )
+    )
+
+    st.divider()
+
+    st.subheader("⚡ Model Settings")
+
+    model_name = st.text_input(
+        "Gemini Model",
+        value=DEFAULT_MODEL
+    )
+
+    st.divider()
+
+    if st.button(
+        "🗑️ Clear Chat History",
+        use_container_width=True
+    ):
+
+        st.session_state.messages = []
+
+        st.rerun()
+
+    st.divider()
+
+    st.caption(
+        "⚡ Streaming enabled • "
+        "💬 Conversation memory • "
+        "🎙️ Voice input"
+    )
+
+
+# ============================================================
+# MAIN HEADER
+# ============================================================
+
+st.title("⚙️ Personal Finance & Maintenance AI")
+
+st.caption(
+    "Your all-in-one AI assistant for budgeting, expenses, "
+    "home maintenance, car maintenance, and everyday tasks."
+)
+
+
+# ============================================================
+# DISPLAY CHAT HISTORY
+# ============================================================
+
+for message in st.session_state.messages:
+
+    with st.chat_message(message["role"]):
+
+        st.markdown(message["content"])
+
+
+# ============================================================
+# RESPONSE GENERATION FUNCTION
+# ============================================================
+
+def generate_ai_response(user_message):
+
+    client = get_gemini_client(
+        st.session_state.api_key
+    )
+
+    conversation = build_conversation()
+
+    # Add latest user message
+    conversation.append(
+        types.Content(
+            role="user",
+            parts=[
+                types.Part(
+                    text=user_message
+                )
+            ]
+        )
+    )
+
+    response = client.models.generate_content_stream(
+
+        model=model_name,
+
+        contents=conversation,
+
+        config=types.GenerateContentConfig(
+
+            system_instruction=
+            SYSTEM_PROMPTS[
+                st.session_state.mode
+            ],
+
+            temperature=0.7,
+
+            max_output_tokens=2048
+        )
+    )
+
+    return response
+
+
+# ============================================================
+# PROCESS USER MESSAGE
+# ============================================================
+
+def process_message(user_message):
+
+    if not user_message:
+        return
+
+    if not st.session_state.api_key:
+
+        st.error(
+            "Please enter your Gemini API Key in the sidebar."
+        )
+
+        return
+
+
+    # Add user message to history
+    st.session_state.messages.append(
+        {
+            "role": "user",
+            "content": user_message
+        }
+    )
+
+
+    # Display user message
+    with st.chat_message("user"):
+
+        st.markdown(user_message)
+
+
+    # AI Response
+    with st.chat_message("assistant"):
+
+        placeholder = st.empty()
+
+        full_response = ""
+
+
+        try:
+
+            stream = generate_ai_response(
+                user_message
+            )
+
+
+            for chunk in stream:
+
+                if hasattr(chunk, "text") and chunk.text:
+
+                    full_response += chunk.text
+
+                    placeholder.markdown(
+                        full_response + "▌"
+                    )
+
+
+            placeholder.markdown(
+                full_response
+            )
+
+
+            # Save assistant response
+            st.session_state.messages.append(
+                {
+                    "role": "assistant",
+                    "content": full_response
+                }
+            )
+
+
+        except Exception as error:
+
+            st.error(
+                f"AI Error: {error}"
+            )
+
+
+# ============================================================
+# VOICE INPUT
+# ============================================================
+
+with st.expander("🎙️ Voice Input"):
+
+    audio = mic_recorder(
+
+        start_prompt="🎙️ Start Recording",
+
+        stop_prompt="⏹️ Stop Recording",
+
+        just_once=True,
+
+        key="voice_recorder"
+    )
+
+
+    if audio:
+
+        st.audio(
+            audio["bytes"]
+        )
+
+        st.info(
+            "Voice recording received. "
+            "Audio-to-text processing can be connected here."
+        )
+
+
+# ============================================================
+# SINGLE CHAT INPUT
+# ============================================================
+
+prompt = st.chat_input(
+    "Ask about budgets, expenses, home maintenance, cars, or anything else..."
+)
+
+
+if prompt:
+
+    process_message(prompt)
