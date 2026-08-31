@@ -81,24 +81,27 @@ if prompt := st.chat_input("Ask about financial advice, budgets, or maintenance.
         except Exception as e:
             st.error(f"Error generating response: {e}")
 
-# --- YOUR EXISTING APP CODE ABOVE ---
-# (Your chat messages, model definitions, and text inputs go here)
+# Create columns so the text chat input and the mic button sit side-by-side
+col1, col2 = st.columns([8, 1])
 
-# --- ADD THIS AT THE VERY END OF YOUR CODE ---
-st.write("---")
-st.subheader("Voice Input 🎙️")
+with col1:
+    # Your standard chat input box
+    user_prompt = st.chat_input("Ask Gemini...")
 
-from streamlit_mic_recorder import mic_recorder
+with col2:
+    # A compact microphone button next to the input box
+    from streamlit_mic_recorder import mic_recorder
+    audio = mic_recorder(
+        start_prompt="🎙️",
+        stop_prompt="⏹️",
+        just_once=True,
+        key='inline_mic'
+    )
 
-# This creates the microphone button at the bottom of the page
-audio = mic_recorder(
-    start_prompt="Click to speak",
-    stop_prompt="Stop recording",
-    just_once=False,
-    key='bottom_mic'
-)
-
+# Handle what happens when audio is recorded
 if audio:
+    st.success("Voice received! Processing audio...")
+    # You can now process audio['bytes'] with your Gemini model
     st.audio(audio['bytes'])
     st.success("Voice recorded! Processing your audio...")
     # Optional: You can send the audio['bytes'] to Gemini if you want it to listen directly!
